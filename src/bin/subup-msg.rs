@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate clap;
-extern crate failure;
-extern crate subup;
+#![warn(rust_2018_idioms)]
 
 use clap::{App, Arg};
 use failure::Error;
@@ -9,7 +6,7 @@ use failure::Error;
 use subup::cli::Cli;
 use subup::log;
 
-fn get_hash(cli: &Cli, tree: &str, path: &str) -> Result<String, Error> {
+fn get_hash(cli: &Cli<'_>, tree: &str, path: &str) -> Result<String, Error> {
     let output = cli
         .git(&format!("ls-tree {} {}", tree, path))
         .capture_stdout("Failed to ls-tree")?;
@@ -21,7 +18,7 @@ fn get_hash(cli: &Cli, tree: &str, path: &str) -> Result<String, Error> {
         .to_string())
 }
 
-fn doit(cli: &Cli) -> Result<(), Error> {
+fn doit(cli: &Cli<'_>) -> Result<(), Error> {
     cli.status("Generating .SUBUP_COMMIT_MSG")?;
     // (path, start_hash, end_hash)
     let submodules = cli
@@ -43,7 +40,7 @@ fn doit(cli: &Cli) -> Result<(), Error> {
 
 fn main() {
     let matches = App::new("subup-msg")
-        .version(crate_version!())
+        .version(clap::crate_version!())
         .about("Generate commit message")
         .setting(clap::AppSettings::ColoredHelp)
         .arg(

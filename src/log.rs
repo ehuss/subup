@@ -1,4 +1,4 @@
-use cli::Cli;
+use crate::cli::Cli;
 use failure::Error;
 use lazy_static::lazy_static;
 use regex::Regex;

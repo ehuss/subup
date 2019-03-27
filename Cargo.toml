@@ -5,6 +5,7 @@ authors = ["Eric Huss <eric@huss.org>"]
 license = "MIT"
 repository = "https://github.com/ehuss/subup"
 description = "Update rust submodules."
+edition = "2018"
 
 [dependencies]
 clap = "2.32"

@@ -2,11 +2,11 @@ use std::ffi::OsStr;
 use std::io::Write;
 use std::process::exit;
 
+use crate::runner::Runner;
 use clap::ArgMatches;
 use dialoguer::{Confirmation, Input};
 use failure::Error;
 use isatty;
-use runner::Runner;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
 pub struct Cli<'a> {

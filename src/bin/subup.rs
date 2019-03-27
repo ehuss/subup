@@ -1,9 +1,4 @@
-#[macro_use]
-extern crate clap;
-#[macro_use]
-extern crate failure;
-extern crate cargo_metadata;
-extern crate subup;
+#![warn(rust_2018_idioms)]
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -13,7 +8,7 @@ use std::process::{exit, Command};
 
 use cargo_metadata::Metadata;
 use clap::{App, Arg};
-use failure::{Error, ResultExt, SyncFailure};
+use failure::{bail, format_err, Error, ResultExt, SyncFailure};
 
 use subup::cli::Cli;
 use subup::graph;
@@ -623,7 +618,7 @@ impl<'a> SubUp<'a> {
 }
 
 /// Determine the head branch name to use.
-fn up_branch(cli: &Cli, rust_branch: &str) -> String {
+fn up_branch(cli: &Cli<'_>, rust_branch: &str) -> String {
     if let Some(branch) = cli.matches.value_of("up-branch") {
         branch.to_string()
     } else {
@@ -644,7 +639,7 @@ fn up_branch(cli: &Cli, rust_branch: &str) -> String {
 }
 
 /// Determine the base branch name to use (master/beta/stable).
-fn rust_branch(cli: &Cli) -> Result<String, Error> {
+fn rust_branch(cli: &Cli<'_>) -> Result<String, Error> {
     if let Some(branch) = cli.matches.value_of("rust-branch") {
         Ok(branch.to_string())
     } else {
@@ -678,7 +673,7 @@ fn load_metadata() -> Result<Metadata, Error> {
     )
 }
 
-fn doit(cli: &Cli) -> Result<(), Error> {
+fn doit(cli: &Cli<'_>) -> Result<(), Error> {
     let rust_branch = rust_branch(cli)?;
     let up_branch = up_branch(cli, &rust_branch);
 
@@ -694,7 +689,7 @@ fn doit(cli: &Cli) -> Result<(), Error> {
 
 fn main() {
     let matches = App::new("subup")
-        .version(crate_version!())
+        .version(clap::crate_version!())
         .about("Update rust repo submodules")
         .setting(clap::AppSettings::ColoredHelp)
         .arg(
