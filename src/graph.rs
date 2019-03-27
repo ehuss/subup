@@ -20,7 +20,7 @@ pub fn diff_resolve(
     second: &Metadata,
     modified_members: &HashSet<String>,
 ) -> (Vec<Vec<String>>, HashSet<String>) {
-    let mut result = Vec::new();
+    let mut result = HashMap::new();
     // Get the `id` of all of the workspace members.
     // TODO: This probably shouldn't ignore source.
     let roots: HashSet<(String, String)> = first
@@ -87,7 +87,8 @@ pub fn diff_resolve(
     // Based on the diffs, get the path to each workspace member that is
     // affected.
     let mut changed_paths = HashSet::new();
-    for trail in &result {
+    let trails: Vec<Vec<String>> = result.drain().map(|(_k, v)| v).collect();
+    for trail in &trails {
         let name = trail[0].split(' ').next().unwrap();
         // TODO: Use find() instead?
         let mut found = false;
@@ -105,7 +106,7 @@ pub fn diff_resolve(
         }
     }
 
-    (result, changed_paths)
+    (trails, changed_paths)
 }
 
 fn strip_source(id: &str) -> String {
@@ -119,12 +120,21 @@ fn diff(
     second_resolve: &ResolveMap,
     id: &str,
     trail: &mut Vec<String>,
-    result: &mut Vec<Vec<String>>,
+    result: &mut HashMap<String, Vec<String>>,
 ) {
     // This could be better.
-    trail.push(strip_source(id));
+    let stripped_id = strip_source(id);
+    if trail.contains(&stripped_id) {
+        // cycle
+        return;
+    }
+    if !trail.is_empty() && result.contains_key(&trail[0]) {
+        // This entry is already know to be affected.
+        return;
+    }
+    trail.push(stripped_id);
     if !second_resolve.contains_key(id) || modified_members.contains(&strip_source(id)) {
-        result.push(trail.clone());
+        result.insert(trail[0].clone(), trail.clone());
         trail.pop();
         return;
     }
@@ -134,7 +144,7 @@ fn diff(
     for dep in first_deps {
         if !second_deps.contains(&dep) {
             trail.push(strip_source(dep));
-            result.push(trail.clone());
+            result.insert(trail[0].clone(), trail.clone());
             trail.pop();
             found = true;
         }
@@ -142,7 +152,7 @@ fn diff(
     for dep in second_deps {
         if !first_deps.contains(&dep) {
             trail.push(strip_source(dep));
-            result.push(trail.clone());
+            result.insert(trail[0].clone(), trail.clone());
             trail.pop();
             found = true;
         }

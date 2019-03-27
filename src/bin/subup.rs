@@ -6,7 +6,7 @@ extern crate cargo_metadata;
 extern crate subup;
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
@@ -33,8 +33,8 @@ struct Member {
 struct Submodule {
     /// Relative path to the submodule.
     path: String,
-    /// The branch it should update to.
-    branch: String,
+    /// The branch or revision it should update to.
+    rev: String,
     /// True if the submodule was listed on command line.
     wants_update: bool,
     /// This is set to `true` if the submodule was updated and new changes
@@ -150,8 +150,12 @@ impl<'a> SubUp<'a> {
     fn get_hash(&self, rev: &str, path: &str) -> Result<String, Error> {
         let output = self
             .cli
-            .git(&format!("rev-parse --verify {}:{}", rev, path))
-            .capture_stdout(format!("Failed to determine rev for submodule `{}`", path))?;
+            .git(&format!("rev-parse --verify {}", rev))
+            .dir(path)
+            .capture_stdout(format!(
+                "Failed to determine rev `{}` for path `{}`",
+                rev, path
+            ))?;
         Ok(output)
     }
 
@@ -185,11 +189,11 @@ impl<'a> SubUp<'a> {
                     });
                 }
             }
-            let original_hash = self.get_hash("HEAD", &path)?;
+            let original_hash = self.get_hash(&format!("HEAD:{}", path), ".")?;
             let submodule = Submodule {
                 path: path.to_string(),
-                branch: "master".to_string(), // Will set below.
-                wants_update: false,          // Will set below.
+                rev: "master".to_string(), // Will set below.
+                wants_update: false,       // Will set below.
                 was_updated: false,
                 original_hash,
                 members,
@@ -199,19 +203,20 @@ impl<'a> SubUp<'a> {
         // Check user arguments.
         for arg in self.cli.matches.values_of("submodules").unwrap() {
             let parts: Vec<_> = arg.splitn(2, ':').collect();
-            let (path, branch) = if parts.len() == 1 {
+            let (path, rev) = if parts.len() == 1 {
                 if self.rust_branch != "master" {
                     self.cli.warning(&format!(
                         "Did not specify a branch for module `{}`.",
                         parts[0]
                     ))?;
-                    let branch = self
-                        .cli
-                        .input(&format!("Which branch should `{}` use?", parts[0]), None)?;
-                    if branch.is_none() {
-                        bail!("You must specify a branch for module `{}`", parts[0]);
+                    let rev = self.cli.input(
+                        &format!("Which branch or revision should `{}` use?", parts[0]),
+                        None,
+                    )?;
+                    if rev.is_none() {
+                        bail!("You must specify a branch or rev for module `{}`", parts[0]);
                     }
-                    (parts[0].to_string(), branch.unwrap())
+                    (parts[0].to_string(), rev.unwrap())
                 } else {
                     // TODO: This probably shouldn't assume master, but the
                     // value in .gitmodules may not be accurate.
@@ -224,39 +229,59 @@ impl<'a> SubUp<'a> {
                 .submodules
                 .iter_mut()
                 .find(|submodule| submodule.path == path)
-                .ok_or_else(|| format_err!("Could not find submodule `{}` in git modules.", path))?;
-            // Verify the branch name is correct.
-            self.cli
-                .git(&format!(
-                    "show-ref --verify --quiet refs/remotes/origin/{}",
-                    branch
-                ))
-                .dir(&path)
-                .run(format!(
-                    "Could not verify `{}` is a valid branch name for `{}`.",
-                    branch, path
-                ))?;
-            submodule.branch = branch;
+                .ok_or_else(|| {
+                    format_err!("Could not find submodule `{}` in git modules.", path)
+                })?;
+            submodule.rev = rev;
             submodule.wants_update = true;
         }
         Ok(())
     }
 
-    fn fetch_and_check_for_updates(&self) -> Result<(), Error> {
+    fn fetch_submodules(&self) -> Result<(), Error> {
         self.cli.status("Fetching submodules.")?;
         // TODO: This may not be necessary after `submodule update`?
         for submodule in self.submodules_to_up() {
             self.cli
-                .git("fetch")
+                .git("fetch --tags")
                 .dir(&submodule.path)
                 .run(format!("Failed to fetch in module `{}`.", submodule.path))?;
         }
+        Ok(())
+    }
+
+    fn check_submodule_rev(&mut self) -> Result<(), Error> {
+        self.cli.status("Checking submodule revs.")?;
+        let mut to_change = HashMap::new();
+        for submodule in self.submodules_to_up() {
+            // Verify the rev name is correct.
+            let origin = format!("origin/{}", submodule.rev);
+            if self.get_hash(&origin, &submodule.path).is_ok() {
+                to_change.insert(submodule.path.clone(), origin);
+            } else {
+                self.get_hash(&submodule.rev, &submodule.path)?;
+            }
+        }
+        for (path, rev) in to_change {
+            let submodule = self
+                .submodules
+                .iter_mut()
+                .find(|submodule| &submodule.path == &path)
+                .ok_or_else(|| {
+                    format_err!("Could not find submodule `{}` in git modules.", path)
+                })?;
+            submodule.rev = rev;
+        }
+        Ok(())
+    }
+
+    fn check_for_updates(&self) -> Result<(), Error> {
         // Check if any of the submodules were actually modified.
         let mut found = false;
         for submodule in self.submodules_to_up() {
             let was_modified = !self
                 .cli
-                .git(&format!("diff-index --quiet origin/{}", submodule.branch))
+                .git(&format!("diff-index --quiet {}", submodule.rev))
                 .dir(&submodule.path)
                 .status("Failed to check for changes.")?
                 .success();
@@ -330,11 +355,11 @@ impl<'a> SubUp<'a> {
         self.cli.status("Updating submodules.")?;
         for submodule in self.submodules_to_up() {
             self.cli
-                .git(&format!("checkout {}", &submodule.branch))
+                .git(&format!("checkout {}", &submodule.rev))
                 .dir(&submodule.path)
                 .run(format!(
-                    "Failed to checkout branch `{}` in module `{}`.",
-                    submodule.branch, submodule.path
+                    "Failed to checkout rev `{}` in module `{}`.",
+                    submodule.rev, submodule.path
                 ))?;
         }
         Ok(())
@@ -412,7 +437,7 @@ impl<'a> SubUp<'a> {
                 }
             }
         }
-        if self.has_changes("src/Cargo.lock")? {
+        if self.has_changes("Cargo.lock")? {
             self.cli.warning("Cargo.lock has changed.")?;
             if !self.cli.is_interactive() && !self.cli.matches.is_present("allow-lock-change") {
                 bail!("Cargo.lock changes requires --allow-lock-change, aborting...");
@@ -420,7 +445,7 @@ impl<'a> SubUp<'a> {
             self.compare_lock()?;
             self.cli.status("Displaying lock diff.")?;
             self.cli
-                .git("diff src/Cargo.lock")
+                .git("diff Cargo.lock")
                 .run("Failed to diff Cargo.lock.")?;
             if self.cli.is_interactive() {
                 self.cli
@@ -430,7 +455,7 @@ impl<'a> SubUp<'a> {
                     .confirm("Do you want to edit Cargo.lock before continuing?")?
                 {
                     let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                    let mut child = Command::new(&editor).args(&["src/Cargo.lock"]).spawn()?;
+                    let mut child = Command::new(&editor).args(&["Cargo.lock"]).spawn()?;
                     let status = child.wait()?;
                     if !status.success() {
                         bail!("Failed to run editor `{}` for Cargo.lock.", editor);
@@ -468,18 +493,18 @@ impl<'a> SubUp<'a> {
             &new_metadata,
             &modified_members,
         );
+        // TODO: IMPORTANT!!!!!!!!
+        // This isn't handling non-git submodules properly (ex: libprocmacro)
+        // Need to better think about the mapping of Cargo pkg -> x.py test
         let modified_submodules: HashSet<&Submodule> = root_paths
             .into_iter()
-            .map(|root_path| {
-                self.submodules
-                    .iter()
-                    .find(|submodule| {
-                        submodule
-                            .members
-                            .iter()
-                            .any(|member| member.path == Path::new(&root_path))
-                    })
-                    .unwrap_or_else(|| panic!("Could not find member `{}` from diff.", root_path))
+            .filter_map(|root_path| {
+                self.submodules.iter().find(|submodule| {
+                    submodule
+                        .members
+                        .iter()
+                        .any(|member| member.path == Path::new(&root_path))
+                })
             })
             .collect();
         // Warn about submodules that were not updated that are affected by
@@ -542,7 +567,7 @@ impl<'a> SubUp<'a> {
             .filter(|submodule| submodule.was_updated)
             .map(|submodule| submodule.path.clone())
             .collect();
-        to_add.push("src/Cargo.lock".to_string());
+        to_add.push("Cargo.lock".to_string());
         self.cli
             .git("add")
             .args(&to_add)
@@ -550,13 +575,13 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn prepare_commit(&self) -> Result<(), Error> {
-        self.cli.status("Preparing commit.")?;
+    fn prepare_commit_message(&self) -> Result<(), Error> {
+        self.cli.status("Preparing commit message.")?;
         let ups: Vec<_> = self
             .submodules_to_up()
             .filter(|submodule| submodule.was_updated)
             .map(|submodule| {
-                let new_hash = self.get_hash("", &submodule.path)?;
+                let new_hash = self.get_hash(&format!(":{}", &submodule.path), ".")?;
                 Ok((
                     submodule.path.as_str(),
                     submodule.original_hash.as_str(),
@@ -582,14 +607,16 @@ impl<'a> SubUp<'a> {
         self.make_branch()?;
         self.orig_metadata = Some(load_metadata()?);
         self.check_args()?;
-        self.fetch_and_check_for_updates()?;
+        self.fetch_submodules()?;
+        self.check_submodule_rev()?;
+        self.check_for_updates()?;
         self.update_submodules()?;
         self.check_submodule_updated()?;
         self.update_lock()?;
         let modified_submodules = self.compare_lock()?;
-        self.test(&modified_submodules)?;
         self.git_add()?;
-        self.prepare_commit()?;
+        self.prepare_commit_message()?;
+        self.test(&modified_submodules)?;
         self.finish()?;
         Ok(())
     }
@@ -645,7 +672,7 @@ fn load_metadata() -> Result<Metadata, Error> {
     // TODO: Temp hack to deal with clippy needing nightly due to edition feature.
     env::set_var("RUSTC_BOOTSTRAP", "1");
     Ok(
-        cargo_metadata::metadata_run(Some(Path::new("src/Cargo.toml")), true, None)
+        cargo_metadata::metadata_run(Some(Path::new("Cargo.toml")), true, None)
             .map_err(SyncFailure::new)
             .context("Failed to load cargo metadata.")?,
     )
@@ -700,7 +727,7 @@ fn main() {
             Arg::with_name("up-branch")
                 .long("up-branch")
                 .takes_value(true)
-                .help("The branch name to create (defaults to {module}-subup)"),
+                .help("The branch name to create (defaults to update-{module})"),
         )
         .arg(
             Arg::with_name("allow-lock-change")

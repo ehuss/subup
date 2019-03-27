@@ -100,11 +100,10 @@ impl Runner {
                     Ok(output)
                 }
             }
-            Err(e) => Err(
-                e.context(format!("Failed to run command: {}", self.cmd_str))
-                    .context(err_context.into())
-                    .into(),
-            ),
+            Err(e) => Err(e
+                .context(format!("Failed to run command: {}", self.cmd_str))
+                .context(err_context.into())
+                .into()),
         }
     }
 }
