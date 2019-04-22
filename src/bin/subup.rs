@@ -403,7 +403,7 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn update_lock(&self) -> Result<(), Error> {
+    fn update_lock(&self) -> Result<HashSet<&Submodule>, Error> {
         self.cli.status("Updating Cargo.lock")?;
         for submodule in self.submodules_to_up() {
             if submodule.was_updated {
@@ -437,7 +437,7 @@ impl<'a> SubUp<'a> {
             if !self.cli.is_interactive() && !self.cli.matches.is_present("allow-lock-change") {
                 bail!("Cargo.lock changes requires --allow-lock-change, aborting...");
             }
-            self.compare_lock()?;
+            let modified_submodules = self.compare_lock()?;
             self.cli.status("Displaying lock diff.")?;
             self.cli
                 .git("diff Cargo.lock")
@@ -455,10 +455,13 @@ impl<'a> SubUp<'a> {
                     if !status.success() {
                         bail!("Failed to run editor `{}` for Cargo.lock.", editor);
                     }
+                    let modified_submodules = self.compare_lock()?;
+                    return Ok(modified_submodules);
                 }
             }
+            return Ok(modified_submodules);
         }
-        Ok(())
+        Ok(HashSet::new())
     }
 
     fn compare_lock(&self) -> Result<HashSet<&Submodule>, Error> {
@@ -611,8 +614,7 @@ impl<'a> SubUp<'a> {
         self.check_for_updates()?;
         self.update_submodules()?;
         self.check_submodule_updated()?;
-        self.update_lock()?;
-        let modified_submodules = self.compare_lock()?;
+        let modified_submodules = self.update_lock()?;
         self.git_add()?;
         self.prepare_commit_message()?;
         self.test(&modified_submodules)?;
