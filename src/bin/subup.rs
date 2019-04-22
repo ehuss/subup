@@ -537,6 +537,10 @@ impl<'a> SubUp<'a> {
             }
             paths
         };
+        if let Some(extra) = self.cli.matches.value_of("test") {
+            let mut es = extra.split_whitespace().map(|s| s.to_string()).collect();
+            to_test.append(&mut es);
+        }
         // TODO: better way to skip
         if to_test.is_empty() || to_test == ["skip"] {
             self.cli.warning("Skipping tests.")?;
@@ -732,7 +736,8 @@ fn main() {
         .arg(
             Arg::with_name("test")
                 .long("test")
-                .help("Always run tests on modified submodules."),
+                .takes_value(true)
+                .help("Always run the given tests on modified submodules."),
         )
         .get_matches();
 
