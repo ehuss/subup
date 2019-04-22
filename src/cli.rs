@@ -74,20 +74,21 @@ impl<'a> Cli<'a> {
         isatty::stdout_isatty()
     }
 
-    pub fn confirm(&self, message: &str) -> Result<bool, Error> {
+    pub fn confirm(&self, message: &str, default: bool) -> Result<bool, Error> {
         if !self.is_interactive() {
             return Ok(false);
         }
-        Ok(Confirmation::new(message).interact()?)
+        Ok(Confirmation::new().with_text(message).default(default).interact()?)
     }
 
     pub fn input(&self, message: &str, default: Option<&str>) -> Result<Option<String>, Error> {
         if !self.is_interactive() {
             return Ok(None);
         }
-        let mut input = Input::new(message);
+        let mut input: Input<'_, String> = Input::new();
+        input.with_prompt(message);
         if let Some(d) = default {
-            input.default(d);
+            input.default(d.to_string());
         }
         Ok(Some(input.interact()?))
     }

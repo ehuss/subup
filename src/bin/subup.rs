@@ -102,7 +102,7 @@ impl<'a> SubUp<'a> {
                 .git("status --porcelain")
                 .run("Failed to get git status.")?;
             if !self.cli.matches.is_present("allow-changes")
-                && !self.cli.confirm("Do you want to continue?")?
+                && !self.cli.confirm("Do you want to continue?", true)?
             {
                 self.cli.exit_err();
             }
@@ -339,7 +339,7 @@ impl<'a> SubUp<'a> {
                 self.up_branch
             ))?;
             // TODO: cli option to allow.
-            if !self.cli.confirm("Do you want to continue?")? {
+            if !self.cli.confirm("Do you want to continue?", true)? {
                 self.cli.exit_err();
             }
         }
@@ -447,7 +447,7 @@ impl<'a> SubUp<'a> {
                     .info("Please carefully inspect Cargo.lock changes.")?;
                 if self
                     .cli
-                    .confirm("Do you want to edit Cargo.lock before continuing?")?
+                    .confirm("Do you want to edit Cargo.lock before continuing?", false)?
                 {
                     let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                     let mut child = Command::new(&editor).args(&["Cargo.lock"]).spawn()?;
