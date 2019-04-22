@@ -78,7 +78,10 @@ impl<'a> Cli<'a> {
         if !self.is_interactive() {
             return Ok(false);
         }
-        Ok(Confirmation::new().with_text(message).default(default).interact()?)
+        Ok(Confirmation::new()
+            .with_text(message)
+            .default(default)
+            .interact()?)
     }
 
     pub fn input(&self, message: &str, default: Option<&str>) -> Result<Option<String>, Error> {
