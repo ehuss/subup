@@ -521,12 +521,32 @@ impl<'a> SubUp<'a> {
 
     fn test(&self, modified_submodules: &HashSet<&Submodule>) -> Result<(), Error> {
         // TODO: Remove submodules that can't be tested?
-        let paths: Vec<_> = modified_submodules.iter().map(|s| s.path.clone()).collect();
+        let mut default = HashSet::new();
+        let cli_test = self
+            .cli
+            .matches
+            .values_of("test")
+            .map(|tests| tests.map(|s| s.to_string()).collect())
+            .unwrap_or_else(|| vec!["default".to_string()]);
+        for choice in cli_test {
+            if choice == "skip" {
+                self.cli.warning("`skip` specified, tests skipped.")?;
+                return Ok(());
+            } else if choice == "default" {
+                for s in modified_submodules {
+                    default.insert(s.path.clone());
+                }
+            } else {
+                default.insert(choice.to_string());
+            }
+        }
+        let default: Vec<String> = default.into_iter().collect();
+        // This behavior is a little weird, consider changing.
         let mut to_test = if self.cli.is_interactive() {
-            let paths = paths.join(" ");
+            let default = default.join(" ");
             let input = self
                 .cli
-                .input("Enter the submodules to test", Some(&paths))?
+                .input("Enter the submodules to test", Some(&default))?
                 .unwrap();
             if input == "" {
                 Vec::new()
@@ -538,12 +558,8 @@ impl<'a> SubUp<'a> {
                 self.cli.warning("Tests skipped, use --test to test.")?;
                 return Ok(());
             }
-            paths
+            default
         };
-        if let Some(extra) = self.cli.matches.value_of("test") {
-            let mut es = extra.split_whitespace().map(|s| s.to_string()).collect();
-            to_test.append(&mut es);
-        }
         // TODO: better way to skip
         if to_test.is_empty() || to_test == ["skip"] {
             self.cli.warning("Skipping tests.")?;
@@ -739,6 +755,8 @@ fn main() {
             Arg::with_name("test")
                 .long("test")
                 .takes_value(true)
+                .multiple(true)
+                .use_delimiter(true)
                 .help("Always run the given tests on modified submodules."),
         )
         .get_matches();
