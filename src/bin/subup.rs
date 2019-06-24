@@ -168,22 +168,7 @@ impl<'a> SubUp<'a> {
             parts[1]
         });
         for path in paths {
-            // Determine which members are in this submodule.
-            let abs_path = env::current_dir()?.join(&path);
-            // TODO: Fix for windows?
-            let mut members = Vec::new();
-            for member in &self.orig_metadata.as_ref().unwrap().workspace_members {
-                // TODO: When is this not the case?
-                assert!(member.url.starts_with("path+file://"));
-                let member_path = Path::new(&member.url[12..]);
-                if member_path.strip_prefix(&abs_path).is_ok() {
-                    members.push(Member {
-                        name: member.name.clone(),
-                        _version: format!("{}", member.version),
-                        path: member_path.to_path_buf(),
-                    });
-                }
-            }
+            let members = SubUp::compute_members(self.orig_metadata.as_ref().unwrap(), path)?;
             let original_hash = self.get_hash(&format!("HEAD:{}", path), ".")?;
             let submodule = Submodule {
                 path: path.to_string(),
@@ -363,6 +348,7 @@ impl<'a> SubUp<'a> {
     fn check_submodule_updated(&mut self) -> Result<(), Error> {
         self.cli.status("Checking for updated submodules.")?;
 
+        let new_metadata = load_metadata()?;
         let mods_updated: Vec<bool> = self
             .submodules_to_up()
             .map(|m| self.has_changes(&m.path))
@@ -374,7 +360,11 @@ impl<'a> SubUp<'a> {
             .zip(mods_updated)
         {
             submodule.was_updated = updated;
+            // In case the members changes in this update, recompute.
+            let members = SubUp::compute_members(&new_metadata, &submodule.path)?;
+            submodule.members = members;
         }
+
         for submodule in self.submodules_to_up() {
             if !submodule.was_updated {
                 self.cli.warning(&format!(
@@ -388,6 +378,26 @@ impl<'a> SubUp<'a> {
             exit(0);
         }
         Ok(())
+    }
+
+    /// Determine which members are in a submodule.
+    fn compute_members(metadata: &Metadata, submodule_path: &str) -> Result<Vec<Member>, Error> {
+        let mut members = Vec::new();
+        for member in &metadata.workspace_members {
+            // TODO: When is this not the case?
+            // TODO: Fix for windows?
+            assert!(member.url.starts_with("path+file://"));
+            let member_path = Path::new(&member.url[12..]);
+            let abs_path = env::current_dir()?.join(&submodule_path);
+            if member_path.strip_prefix(&abs_path).is_ok() {
+                members.push(Member {
+                    name: member.name.clone(),
+                    _version: format!("{}", member.version),
+                    path: member_path.to_path_buf(),
+                });
+            }
+        }
+        Ok(members)
     }
 
     fn update_lock_submodule(&self, member: &Member) -> Result<(), Error> {
