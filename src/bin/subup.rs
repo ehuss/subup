@@ -536,7 +536,7 @@ impl<'a> SubUp<'a> {
             .cli
             .matches
             .values_of("test")
-            .map(|tests| tests.map(|s| s.to_string()).collect())
+            .map(|tests| tests.flat_map(|s| s.split_whitespace().map(|s| s.to_string())).collect())
             .unwrap_or_else(|| vec!["default".to_string()]);
         for choice in cli_test {
             if choice == "skip" {
