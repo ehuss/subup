@@ -18,6 +18,17 @@ fn get_hash(cli: &Cli<'_>, tree: &str, path: &str) -> Result<String, Error> {
         .to_string())
 }
 
+fn current_hash(cli: &Cli<'_>, path: &str) -> Result<String, Error> {
+    let output = cli
+        .git("rev-parse --verify HEAD")
+        .dir(path)
+        .capture_stdout(format!(
+            "Failed to determine rev `HEAD` for path `{}`",
+            path
+        ))?;
+    Ok(output)
+}
+
 fn doit(cli: &Cli<'_>) -> Result<(), Error> {
     cli.status("Generating .SUBUP_COMMIT_MSG")?;
     // (path, start_hash, end_hash)
@@ -27,9 +38,7 @@ fn doit(cli: &Cli<'_>) -> Result<(), Error> {
         .unwrap()
         .map(|submodule| {
             let first = get_hash(cli, cli.matches.value_of("branch").unwrap(), submodule)?;
-            // TODO: Support uncommitted changes.
-            // git submodule status --cached src/tools/cargo
-            let current = get_hash(cli, "HEAD", submodule)?;
+            let current = current_hash(cli, submodule)?;
             Ok((submodule, first, current))
         })
         .collect::<Result<Vec<_>, Error>>()?;
