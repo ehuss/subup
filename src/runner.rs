@@ -1,4 +1,4 @@
-use failure::{self, Error, Fail};
+use anyhow::{Context, Error};
 use std::ffi::{OsStr, OsString};
 use std::process::{Command, ExitStatus, Output, Stdio};
 
@@ -91,19 +91,17 @@ impl Runner {
                     || (output.status.code() != Some(0) && output.status.code() != Some(1))
                 {
                     Err(
-                        failure::err_msg(format!("Command exit status {:?}", output.status.code()))
+                        anyhow::format_err!("Command exit status {:?}", output.status.code())
                             .context(format!("Failed to run command: {}", self.cmd_str))
-                            .context(err_context.into())
-                            .into(),
+                            .context(err_context.into()),
                     )
                 } else {
                     Ok(output)
                 }
             }
-            Err(e) => Err(e
-                .context(format!("Failed to run command: {}", self.cmd_str))
-                .context(err_context.into())
-                .into()),
+            Err(e) => Err(e)
+                .with_context(|| format!("Failed to run command: {}", self.cmd_str))
+                .with_context(|| err_context.into()),
         }
     }
 }

@@ -3,9 +3,9 @@ use std::io::Write;
 use std::process::exit;
 
 use crate::runner::Runner;
+use anyhow::Error;
 use clap::ArgMatches;
 use dialoguer::{Confirmation, Input};
-use failure::Error;
 use isatty;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
@@ -25,7 +25,7 @@ impl<'a> Cli<'a> {
     pub fn doit(&self, f: impl Fn(&Cli) -> Result<(), Error>) -> ! {
         if let Err(e) = f(&self) {
             let _ = self.emit_message("Error: ", Color::Red, &e.to_string(), true);
-            for cause in e.causes().skip(1) {
+            for cause in e.chain().skip(1) {
                 let _ = self.emit_message("Caused by: ", Color::Red, &cause.to_string(), true);
             }
             self.exit_err();

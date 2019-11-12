@@ -9,7 +9,7 @@ edition = "2018"
 
 [dependencies]
 clap = "2.32"
-failure = "0.1"
+anyhow = "1.0"
 dialoguer = "0.3"
 isatty = "0.1"
 termcolor = "0.3"

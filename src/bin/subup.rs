@@ -6,9 +6,9 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
+use anyhow::{bail, format_err, Context, Error};
 use cargo_metadata::{Metadata, Package, PackageId};
 use clap::{App, Arg};
-use failure::{bail, format_err, Error, ResultExt, SyncFailure};
 
 use subup::cli::Cli;
 
@@ -638,7 +638,6 @@ fn load_metadata() -> Result<Metadata, Error> {
     let m = cargo_metadata::MetadataCommand::new()
         .no_deps()
         .exec()
-        .map_err(SyncFailure::new)
         .context("Failed to load cargo metadata.")?;
     Ok(m)
 }

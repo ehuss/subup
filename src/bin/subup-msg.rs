@@ -1,7 +1,7 @@
 #![warn(rust_2018_idioms)]
 
+use anyhow::Error;
 use clap::{App, Arg};
-use failure::Error;
 
 use subup::cli::Cli;
 use subup::log;

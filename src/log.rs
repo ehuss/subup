@@ -1,5 +1,5 @@
 use crate::cli::Cli;
-use failure::Error;
+use anyhow::{bail, format_err, Error};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::borrow::Cow;
