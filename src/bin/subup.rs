@@ -636,6 +636,7 @@ fn load_metadata() -> Result<Metadata, Error> {
     // TODO: Temp hack to deal with clippy needing nightly due to edition feature.
     env::set_var("RUSTC_BOOTSTRAP", "1");
     let m = cargo_metadata::MetadataCommand::new()
+        .no_deps()
         .exec()
         .map_err(SyncFailure::new)
         .context("Failed to load cargo metadata.")?;
