@@ -6,7 +6,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use cargo_metadata::Metadata;
+use cargo_metadata::{Metadata, Package, PackageId};
 use clap::{App, Arg};
 use failure::{bail, format_err, Error, ResultExt, SyncFailure};
 
@@ -387,16 +387,20 @@ impl<'a> SubUp<'a> {
     /// Determine which members are in a submodule.
     fn compute_members(metadata: &Metadata, submodule_path: &str) -> Result<Vec<Member>, Error> {
         let mut members = Vec::new();
+        let package_map: HashMap<&PackageId, &Package> = metadata
+            .packages
+            .iter()
+            .map(|package| (&package.id, package))
+            .collect();
+        let abs_path = env::current_dir()?.join(&submodule_path);
         for member in &metadata.workspace_members {
-            // TODO: When is this not the case?
-            // TODO: Fix for windows?
-            assert!(member.url.starts_with("path+file://"));
-            let member_path = Path::new(&member.url[12..]);
-            let abs_path = env::current_dir()?.join(&submodule_path);
+            let package = package_map[member];
+            // Pop `Cargo.toml` off path.
+            let member_path = package.manifest_path.parent().unwrap();
             if member_path.strip_prefix(&abs_path).is_ok() {
                 members.push(Member {
-                    name: member.name.clone(),
-                    _version: format!("{}", member.version),
+                    name: package.name.clone(),
+                    _version: package.version.to_string(),
                     path: member_path.to_path_buf(),
                 });
             }
@@ -631,11 +635,11 @@ fn rust_branch(cli: &Cli<'_>) -> Result<String, Error> {
 fn load_metadata() -> Result<Metadata, Error> {
     // TODO: Temp hack to deal with clippy needing nightly due to edition feature.
     env::set_var("RUSTC_BOOTSTRAP", "1");
-    Ok(
-        cargo_metadata::metadata_run(Some(Path::new("Cargo.toml")), true, None)
-            .map_err(SyncFailure::new)
-            .context("Failed to load cargo metadata.")?,
-    )
+    let m = cargo_metadata::MetadataCommand::new()
+        .exec()
+        .map_err(SyncFailure::new)
+        .context("Failed to load cargo metadata.")?;
+    Ok(m)
 }
 
 fn doit(cli: &Cli<'_>) -> Result<(), Error> {
