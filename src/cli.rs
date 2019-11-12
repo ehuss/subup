@@ -6,7 +6,6 @@ use crate::runner::Runner;
 use anyhow::Error;
 use clap::ArgMatches;
 use dialoguer::{Confirmation, Input};
-use isatty;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
 pub struct Cli<'a> {
@@ -71,7 +70,7 @@ impl<'a> Cli<'a> {
     }
 
     pub fn is_interactive(&self) -> bool {
-        isatty::stdout_isatty()
+        atty::is(atty::Stream::Stdout)
     }
 
     pub fn confirm(&self, message: &str, default: bool) -> Result<bool, Error> {
