@@ -1,12 +1,5 @@
-extern crate cargo_metadata;
-extern crate clap;
-extern crate dialoguer;
 #[macro_use]
 extern crate failure;
-extern crate isatty;
-extern crate lazy_static;
-extern crate regex;
-extern crate termcolor;
 
 pub mod cli;
 pub mod log;
