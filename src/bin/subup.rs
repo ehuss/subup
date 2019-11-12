@@ -4,14 +4,14 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::process::exit;
 
 use cargo_metadata::Metadata;
 use clap::{App, Arg};
 use failure::{bail, format_err, Error, ResultExt, SyncFailure};
 
 use subup::cli::Cli;
-use subup::graph;
+
 use subup::log;
 
 /// Cargo workspace member.
@@ -57,6 +57,10 @@ struct SubUp<'a> {
 impl<'a> SubUp<'a> {
     fn submodules_to_up(&self) -> impl Iterator<Item = &Submodule> {
         self.submodules.iter().filter(|s| s.wants_update)
+    }
+
+    fn updated_submodules(&self) -> impl Iterator<Item = &Submodule> {
+        self.submodules.iter().filter(|s| s.was_updated)
     }
 
     fn has_changes(&self, path: &str) -> Result<bool, Error> {
@@ -413,31 +417,29 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn update_lock(&self) -> Result<HashSet<&Submodule>, Error> {
+    fn update_lock(&self) -> Result<(), Error> {
         self.cli.status("Updating Cargo.lock")?;
-        for submodule in self.submodules_to_up() {
-            if submodule.was_updated {
-                // TODO: This does not support adding a new member.
-                for member in &submodule.members {
-                    // Check if Cargo.toml was updated.
-                    let was_updated = !self
-                        .cli
-                        .git(&format!(
-                            "diff-index --quiet {} Cargo.toml",
-                            submodule.original_hash
-                        ))
-                        .dir(member.path.to_str().unwrap())
-                        .status("Failed to determine if Cargo.toml changed.")?
-                        .success();
-                    if was_updated {
-                        self.update_lock_submodule(member)?;
-                    } else {
-                        if self.cli.matches.is_present("verbose") {
-                            self.cli.info(&format!(
-                                "Skipping member `{}`, manifest was not changed.",
-                                member.name
-                            ))?;
-                        }
+        for submodule in self.updated_submodules() {
+            // TODO: This does not support adding a new member.
+            for member in &submodule.members {
+                // Check if Cargo.toml was updated.
+                let was_updated = !self
+                    .cli
+                    .git(&format!(
+                        "diff-index --quiet {} Cargo.toml",
+                        submodule.original_hash
+                    ))
+                    .dir(member.path.to_str().unwrap())
+                    .status("Failed to determine if Cargo.toml changed.")?
+                    .success();
+                if was_updated {
+                    self.update_lock_submodule(member)?;
+                } else {
+                    if self.cli.matches.is_present("verbose") {
+                        self.cli.info(&format!(
+                            "Skipping member `{}`, manifest was not changed.",
+                            member.name
+                        ))?;
                     }
                 }
             }
@@ -447,104 +449,37 @@ impl<'a> SubUp<'a> {
             if !self.cli.is_interactive() && !self.cli.matches.is_present("allow-lock-change") {
                 bail!("Cargo.lock changes requires --allow-lock-change, aborting...");
             }
-            let modified_submodules = self.compare_lock()?;
-            self.cli.status("Displaying lock diff.")?;
-            self.cli
-                .git("diff Cargo.lock")
-                .run("Failed to diff Cargo.lock.")?;
             if self.cli.is_interactive() {
                 self.cli
                     .info("Please carefully inspect Cargo.lock changes.")?;
-                if self
-                    .cli
-                    .confirm("Do you want to edit Cargo.lock before continuing?", false)?
-                {
-                    let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                    let mut child = Command::new(&editor).args(&["Cargo.lock"]).spawn()?;
-                    let status = child.wait()?;
-                    if !status.success() {
-                        bail!("Failed to run editor `{}` for Cargo.lock.", editor);
-                    }
-                    let modified_submodules = self.compare_lock()?;
-                    return Ok(modified_submodules);
+                if !self.cli.confirm("Do you want to continue?", true)? {
+                    bail!("Aborting...");
                 }
             }
-            return Ok(modified_submodules);
         }
-        Ok(HashSet::new())
+        Ok(())
     }
 
-    fn compare_lock(&self) -> Result<HashSet<&Submodule>, Error> {
-        self.cli.status("Diffing cargo metadata.")?;
-        let new_metadata = load_metadata()?;
-        let (diff, _root_paths) = graph::diff_resolve(
-            self.orig_metadata.as_ref().unwrap(),
-            &new_metadata,
-            &HashSet::new(),
-        );
-        if diff.is_empty() {
-            self.cli.info("No changes to Cargo workspace.")?;
-        } else {
-            self.cli.info("Cargo workspace changed:")?;
-            for trail in diff {
-                println!("{}", trail.join(" -> "));
-            }
-        }
-        // Run diff again to figure out the set of things to test.
-        let modified_members: HashSet<String> = self
-            .submodules_to_up()
-            .filter(|m| m.was_updated)
-            .flat_map(|s| s.members.iter().map(|m| m.name.clone()))
-            .collect();
-        let (_diff, root_paths) = graph::diff_resolve(
-            self.orig_metadata.as_ref().unwrap(),
-            &new_metadata,
-            &modified_members,
-        );
-        // TODO: IMPORTANT!!!!!!!!
-        // This isn't handling non-git submodules properly (ex: libprocmacro)
-        // Need to better think about the mapping of Cargo pkg -> x.py test
-        let modified_submodules: HashSet<&Submodule> = root_paths
-            .into_iter()
-            .filter_map(|root_path| {
-                self.submodules.iter().find(|submodule| {
-                    submodule
-                        .members
-                        .iter()
-                        .any(|member| member.path == Path::new(&root_path))
-                })
-            })
-            .collect();
-        // Warn about submodules that were not updated that are affected by
-        // this change.
-        for modified in &modified_submodules {
-            if !modified.wants_update {
-                self.cli.warning(&format!(
-                    "Submodule `{}` is impacted by updates.",
-                    modified.path
-                ))?;
-            }
-        }
-        // TODO: Check for changes that affect non-submodule members.
-        Ok(modified_submodules)
-    }
-
-    fn test(&self, modified_submodules: &HashSet<&Submodule>) -> Result<(), Error> {
+    fn test(&self) -> Result<(), Error> {
         // TODO: Remove submodules that can't be tested?
         let mut default = HashSet::new();
         let cli_test = self
             .cli
             .matches
             .values_of("test")
-            .map(|tests| tests.flat_map(|s| s.split_whitespace().map(|s| s.to_string())).collect())
+            .map(|tests| {
+                tests
+                    .flat_map(|s| s.split_whitespace().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_else(|| vec!["default".to_string()]);
         for choice in cli_test {
             if choice == "skip" {
                 self.cli.warning("`skip` specified, tests skipped.")?;
                 return Ok(());
             } else if choice == "default" {
-                for s in modified_submodules {
-                    default.insert(s.path.clone());
+                for submodule in self.updated_submodules() {
+                    default.insert(submodule.path.clone());
                 }
             } else {
                 default.insert(choice.to_string());
@@ -591,8 +526,7 @@ impl<'a> SubUp<'a> {
     fn git_add(&self) -> Result<(), Error> {
         self.cli.status("Adding to git index.")?;
         let mut to_add: Vec<_> = self
-            .submodules_to_up()
-            .filter(|submodule| submodule.was_updated)
+            .updated_submodules()
             .map(|submodule| submodule.path.clone())
             .collect();
         to_add.push("Cargo.lock".to_string());
@@ -606,8 +540,7 @@ impl<'a> SubUp<'a> {
     fn prepare_commit_message(&self) -> Result<(), Error> {
         self.cli.status("Preparing commit message.")?;
         let ups: Vec<_> = self
-            .submodules_to_up()
-            .filter(|submodule| submodule.was_updated)
+            .updated_submodules()
             .map(|submodule| {
                 let new_hash = self.get_hash(&format!(":{}", &submodule.path), ".")?;
                 Ok((
@@ -623,7 +556,7 @@ impl<'a> SubUp<'a> {
 
     fn finish(&self) -> Result<(), Error> {
         println!("Please review changes.");
-        println!("If satisified, run:");
+        println!("If satisfied, run:");
         println!("git commit -F .SUBUP_COMMIT_MSG");
         println!("git push -f");
         Ok(())
@@ -640,10 +573,10 @@ impl<'a> SubUp<'a> {
         self.check_for_updates()?;
         self.update_submodules()?;
         self.check_submodule_updated()?;
-        let modified_submodules = self.update_lock()?;
+        self.update_lock()?;
         self.git_add()?;
         self.prepare_commit_message()?;
-        self.test(&modified_submodules)?;
+        self.test()?;
         self.finish()?;
         Ok(())
     }

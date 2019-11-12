@@ -9,6 +9,5 @@ extern crate regex;
 extern crate termcolor;
 
 pub mod cli;
-pub mod graph;
 pub mod log;
 pub mod runner;
