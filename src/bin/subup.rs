@@ -554,7 +554,7 @@ impl<'a> SubUp<'a> {
                 ))
             })
             .collect::<Result<_, Error>>()?;
-        log::generate_commit(self.cli, &ups, &self.rust_branch)?;
+        log::generate_commit(self.cli, &ups)?;
         Ok(())
     }
 

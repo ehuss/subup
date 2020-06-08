@@ -11,7 +11,6 @@ pub fn generate_commit(
     cli: &Cli,
     // (path, start_hash, end_hash)
     submodules: &[(&str, impl AsRef<str>, impl AsRef<str>)],
-    branch: &str,
 ) -> Result<(), Error> {
     let commit_re = Regex::new(r"(?m)^commit ([0-9A-Fa-f]+)").unwrap();
     let message_re = Regex::new(r"(?m)^$\n").unwrap();
@@ -36,17 +35,7 @@ pub fn generate_commit(
         Path::new(path).file_name().unwrap().to_string_lossy()
     }
 
-    let names = &submodules
-        .iter()
-        .map(|s| path_to_name(s.0))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let branch_alert = if branch == "master" {
-        "".to_string()
-    } else {
-        format!("[{}] ", branch.to_uppercase())
-    };
-    let mut result = vec![format!("{}Update {}", branch_alert, names)];
+    let mut result = Vec::new();
 
     for (path, start_hash, end_hash) in submodules {
         let start_hash = start_hash.as_ref();
@@ -129,7 +118,8 @@ pub fn generate_commit(
         result.push(submodule_summary.join("\n"));
     }
 
-    fs::write(".SUBUP_COMMIT_MSG", result.join("\n\n"))?;
+    let output = result.join("\n\n") + "\n";
+    fs::write(".SUBUP_COMMIT_MSG", output)?;
     Ok(())
 }
 

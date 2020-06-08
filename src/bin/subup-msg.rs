@@ -42,7 +42,7 @@ fn doit(cli: &Cli<'_>) -> Result<(), Error> {
             Ok((submodule, first, current))
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    log::generate_commit(cli, &submodules, "master")?;
+    log::generate_commit(cli, &submodules)?;
     cli.status("Complete")?;
     Ok(())
 }
