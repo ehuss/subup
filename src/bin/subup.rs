@@ -558,12 +558,64 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn finish(&self) -> Result<(), Error> {
-        println!("Please review changes.");
-        println!("If satisfied, run:");
-        println!("git commit -F .SUBUP_COMMIT_MSG");
-        println!("git push -f");
+    fn commit(&self) -> Result<(), Error> {
+        if self.cli.is_interactive() && !self.cli.confirm("Ready to commit?", true)? {
+            self.cli
+                .warning("Skipping commit, you will need to commit manually.")?;
+            return Ok(());
+        }
+        let default = self.cli.matches.value_of("commit-message");
+        let message = self
+            .cli
+            .input("Commit message", default)?
+            .or_else(|| default.map(|s| s.to_string()));
+        match message {
+            Some(message) => {
+                self.cli.status("Committing changes")?;
+                self.cli
+                    .git("commit -m")
+                    .args(&[message])
+                    .run("Failed to commit changes.")?;
+            }
+            None => {
+                self.cli
+                    .warning("No commit message, skipping commit, use --commit-message to set.")?;
+                return Ok(());
+            }
+        }
+        // Is -f ever necessary?
+        self.cli.git("push").run("Failed to push changes.")?;
         Ok(())
+    }
+
+    fn finish(&self) -> Result<(), Error> {
+        let username = self
+            .github_username()
+            .context("Could not determine GitHub username from origin")?;
+        println!(
+            "Open https://github.com/rust-lang/rust/compare/master...{}:{}?expand=1",
+            username, self.up_branch
+        );
+        println!(
+            "Paste the contents of .SUBUP_COMMIT_MSG, assign yourself, \
+             click create, then approve with bors."
+        );
+        Ok(())
+    }
+
+    fn github_username(&self) -> Result<String, Error> {
+        let origin = self
+            .cli
+            .git("remote get-url origin")
+            .capture_stdout("Failed to get origin url.")?;
+        let stripped = origin
+            .strip_suffix("/rust")
+            .or_else(|| origin.strip_suffix("/rust.git"))
+            .ok_or_else(|| format_err!("origin {} does not end with /rust", origin))?;
+        match stripped.rsplit_once(&[':', '/'][..]) {
+            Some((_before, after)) => Ok(after.to_string()),
+            None => bail!("origin {} seems malformed", origin),
+        }
     }
 
     fn run(&mut self) -> Result<(), Error> {
@@ -581,6 +633,7 @@ impl<'a> SubUp<'a> {
         self.git_add()?;
         self.prepare_commit_message()?;
         self.test()?;
+        self.commit()?;
         self.finish()?;
         Ok(())
     }
@@ -705,6 +758,12 @@ fn main() {
                 .multiple(true)
                 .use_delimiter(true)
                 .help("Always run the given tests on modified submodules."),
+        )
+        .arg(
+            Arg::with_name("commit-message")
+                .long("commit-message")
+                .takes_value(true)
+                .help("Commit message to use"),
         )
         .get_matches();
 
