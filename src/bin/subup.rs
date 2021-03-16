@@ -600,8 +600,8 @@ impl<'a> SubUp<'a> {
             .github_username()
             .context("Could not determine GitHub username from origin")?;
         println!(
-            "Open https://github.com/rust-lang/rust/compare/master...{}:{}?expand=1",
-            username, self.up_branch
+            "Open https://github.com/rust-lang/rust/compare/{}...{}:{}?expand=1",
+            self.rust_branch, username, self.up_branch
         );
         println!(
             "Paste the contents of .SUBUP_COMMIT_MSG, assign yourself, \
