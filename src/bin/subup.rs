@@ -514,8 +514,15 @@ impl<'a> SubUp<'a> {
             self.cli.warning("Skipping tests.")?;
         } else {
             // Prevent bootstrap from changing the submodules.
+            let mut opts = vec!["--disable-manage-submodules"];
+            if let Some(configs) = self.cli.matches.values_of("set-config") {
+                for cfg in configs {
+                    opts.push("--set");
+                    opts.push(cfg);
+                }
+            }
             self.cli
-                .runner("./configure", &["--disable-manage-submodules"])
+                .runner("./configure", &opts)
                 .run("Failed to disable submodules in config.toml.")?;
             self.cli
                 .status(&format!("Running tests for {}", to_test.join(" ")))?;
@@ -764,6 +771,14 @@ fn main() {
                 .long("commit-message")
                 .takes_value(true)
                 .help("Commit message to use"),
+        )
+        .arg(
+            Arg::with_name("set-config")
+                .long("set-config")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1)
+                .help("Set the given config.toml option"),
         )
         .get_matches();
 
