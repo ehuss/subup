@@ -176,7 +176,7 @@ impl<'a> SubUp<'a> {
             let original_hash = self.get_hash(&format!("HEAD:{}", path), ".")?;
             let submodule = Submodule {
                 path: path.to_string(),
-                rev: "master".to_string(), // Will set below.
+                rev: "HEAD".to_string(), // Will set below.
                 wants_update: false,       // Will set below.
                 was_updated: false,
                 original_hash,
@@ -202,9 +202,7 @@ impl<'a> SubUp<'a> {
                     }
                     (parts[0].to_string(), rev.unwrap())
                 } else {
-                    // TODO: This probably shouldn't assume master, but the
-                    // value in .gitmodules may not be accurate.
-                    (parts[0].to_string(), "master".to_string())
+                    (parts[0].to_string(), "HEAD".to_string())
                 }
             } else {
                 (parts[1].to_string(), parts[0].to_string())
@@ -230,6 +228,11 @@ impl<'a> SubUp<'a> {
                 .git("fetch --tags")
                 .dir(&submodule.path)
                 .run(format!("Failed to fetch in module `{}`.", submodule.path))?;
+
+            self.cli
+                .git("remote set-head origin -a")
+                .dir(&submodule.path)
+                .run(format!("Failed to set-head in module `{}`.", submodule.path))?;
         }
         Ok(())
     }
