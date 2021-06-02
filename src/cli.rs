@@ -5,12 +5,14 @@ use std::process::exit;
 use crate::runner::Runner;
 use anyhow::Error;
 use clap::ArgMatches;
-use dialoguer::{Confirmation, Input};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Confirm, Input, Select};
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
 pub struct Cli<'a> {
     pub matches: ArgMatches<'a>,
     out_writer: BufferWriter,
+    theme: ColorfulTheme,
 }
 
 impl<'a> Cli<'a> {
@@ -18,6 +20,7 @@ impl<'a> Cli<'a> {
         Cli {
             matches,
             out_writer: BufferWriter::stdout(ColorChoice::Auto),
+            theme: ColorfulTheme::default(),
         }
     }
 
@@ -77,8 +80,8 @@ impl<'a> Cli<'a> {
         if !self.is_interactive() {
             return Ok(false);
         }
-        Ok(Confirmation::new()
-            .with_text(message)
+        Ok(Confirm::with_theme(&self.theme)
+            .with_prompt(message)
             .default(default)
             .interact()?)
     }
@@ -87,12 +90,29 @@ impl<'a> Cli<'a> {
         if !self.is_interactive() {
             return Ok(None);
         }
-        let mut input: Input<'_, String> = Input::new();
+        let mut input: Input<'_, String> = Input::with_theme(&self.theme);
         input.with_prompt(message);
         if let Some(d) = default {
             input.default(d.to_string());
         }
         Ok(Some(input.interact()?))
+    }
+
+    pub fn select(
+        &self,
+        prompt: &str,
+        items: &[&str],
+        default: Option<usize>,
+    ) -> Result<Option<usize>, Error> {
+        if !self.is_interactive() {
+            return Ok(None);
+        }
+        let mut select = Select::with_theme(&self.theme);
+        select.with_prompt(prompt).items(items);
+        if let Some(default) = default {
+            select.default(default);
+        }
+        Ok(select.interact_opt()?)
     }
 
     /// Create a `Runner` (a wrapper around `Command`).

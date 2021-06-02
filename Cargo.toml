@@ -10,7 +10,7 @@ edition = "2018"
 [dependencies]
 clap = "2.32"
 anyhow = "1.0"
-dialoguer = "0.5"
+dialoguer = "0.8"
 atty = "0.2"
 termcolor = "1.0"
 cargo_metadata = "0.9"

@@ -105,10 +105,19 @@ impl<'a> SubUp<'a> {
             self.cli
                 .git("status --porcelain")
                 .run("Failed to get git status.")?;
-            if !self.cli.matches.is_present("allow-changes")
-                && !self.cli.confirm("Do you want to continue?", true)?
-            {
-                self.cli.exit_err();
+            if !self.cli.matches.is_present("allow-changes") {
+                let choice = self.cli.select(
+                    "How do you wish to proceed?",
+                    &["Abort", "Reset changes", "Continue with changes"],
+                    Some(0),
+                )?;
+                match choice {
+                    None | Some(0) => self.cli.exit_err(),
+                    Some(1) => {
+                        self.cli.git("reset --hard").run("Failed to reset.")?;
+                    }
+                    Some(_) => {}
+                }
             }
         }
 
@@ -177,7 +186,7 @@ impl<'a> SubUp<'a> {
             let submodule = Submodule {
                 path: path.to_string(),
                 rev: "HEAD".to_string(), // Will set below.
-                wants_update: false,       // Will set below.
+                wants_update: false,     // Will set below.
                 was_updated: false,
                 original_hash,
                 members,
@@ -232,7 +241,10 @@ impl<'a> SubUp<'a> {
             self.cli
                 .git("remote set-head origin -a")
                 .dir(&submodule.path)
-                .run(format!("Failed to set-head in module `{}`.", submodule.path))?;
+                .run(format!(
+                    "Failed to set-head in module `{}`.",
+                    submodule.path
+                ))?;
         }
         Ok(())
     }
