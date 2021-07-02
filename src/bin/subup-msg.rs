@@ -8,7 +8,7 @@ use subup::log;
 
 fn get_hash(cli: &Cli<'_>, tree: &str, path: &str) -> Result<String, Error> {
     let output = cli
-        .git(&format!("ls-tree {} {}", tree, path))
+        .git(&format!("ls-tree upstream/{} {}", tree, path))
         .capture_stdout("Failed to ls-tree")?;
     Ok(output
         .split_whitespace()
