@@ -5,13 +5,10 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::exit;
-
 use anyhow::{bail, format_err, Context, Error};
 use cargo_metadata::{Metadata, Package, PackageId};
 use clap::{App, Arg};
-
 use subup::cli::Cli;
-
 use subup::log;
 
 /// Cargo workspace member.
@@ -52,6 +49,8 @@ struct SubUp<'a> {
     /// Metadata of workspace before updating submodules.
     /// None until after base branch is updated.
     orig_metadata: Option<Metadata>,
+    /// Title of the commit and PR.
+    commit_title: Option<String>,
 }
 
 impl<'a> SubUp<'a> {
@@ -580,28 +579,28 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn commit(&self) -> Result<(), Error> {
+    fn commit(&mut self) -> Result<(), Error> {
         if self.cli.is_interactive() && !self.cli.confirm("Ready to commit?", true)? {
             self.cli
                 .warning("Skipping commit, you will need to commit manually.")?;
             return Ok(());
         }
-        let default = self.cli.matches.value_of("commit-message");
-        let message = self
+        let default = self.cli.matches.value_of("commit-title");
+        self.commit_title = self
             .cli
-            .input("Commit message", default)?
+            .input("Commit title", default)?
             .or_else(|| default.map(|s| s.to_string()));
-        match message {
-            Some(message) => {
+        match &self.commit_title {
+            Some(title) => {
                 self.cli.status("Committing changes")?;
                 self.cli
                     .git("commit -m")
-                    .args(&[message])
+                    .args(&[title])
                     .run("Failed to commit changes.")?;
             }
             None => {
                 self.cli
-                    .warning("No commit message, skipping commit, use --commit-message to set.")?;
+                    .warning("No commit title, skipping commit, use --commit-title to set.")?;
                 return Ok(());
             }
         }
@@ -610,7 +609,54 @@ impl<'a> SubUp<'a> {
         Ok(())
     }
 
-    fn finish(&self) -> Result<(), Error> {
+    fn create_pr(&self) -> Result<(), Error> {
+        if self.cli.is_interactive() && !self.cli.confirm("Ready to create a PR?", true)? {
+            self.cli
+                .warning("Skipping PR, you will need to create it manually.")?;
+            return Ok(());
+        }
+        if self.commit_title.is_none() {
+            bail!("Creating a PR requires the commit title (use --commit-title)");
+        }
+        let mut args = vec![
+            "pr",
+            "create",
+            "--title",
+            self.commit_title.as_ref().unwrap(),
+            "--body-file",
+            ".SUBUP_COMMIT_MSG",
+        ];
+        if self.cli.matches.is_present("self-assign") {
+            args.push("--assignee=@me");
+        }
+        if self.rust_branch != "master" {
+            args.push("--base");
+            args.push(&self.rust_branch);
+        }
+        let output = self
+            .cli
+            .runner("gh", &args)
+            .capture_stdout("Failed to execute gh to create the PR.")?;
+        let pr_url = output.trim();
+        if !pr_url.starts_with("https://github.com/rust-lang/rust/pull/") {
+            bail!("Expected gh to return the PR URL, got:\n{output}");
+        }
+        println!("Created PR at {pr_url}");
+        if self.cli.matches.is_present("self-approve") {
+            self.self_approve(pr_url)?;
+        }
+        Ok(())
+    }
+
+    fn self_approve(&self, pr_url: &str) -> Result<(), Error> {
+        let body = self.cli.matches.value_of("self-approve").unwrap();
+        self.cli
+            .runner("gh", &["pr", "comment", pr_url, "--body", body])
+            .run("Failed to execute gh to post a comment to self-approve.")?;
+        Ok(())
+    }
+
+    fn finish_manual_pr(&self) -> Result<(), Error> {
         let username = self
             .github_username()
             .context("Could not determine GitHub username from origin")?;
@@ -656,7 +702,11 @@ impl<'a> SubUp<'a> {
         self.prepare_commit_message()?;
         self.test()?;
         self.commit()?;
-        self.finish()?;
+        if self.cli.matches.is_present("create-pr") {
+            self.create_pr()?;
+        } else {
+            self.finish_manual_pr()?;
+        }
         Ok(())
     }
 }
@@ -727,6 +777,7 @@ fn doit(cli: &Cli<'_>) -> Result<(), Error> {
         rust_branch,
         up_branch,
         orig_metadata: None,
+        commit_title: None,
     };
     s.run()
 }
@@ -782,10 +833,11 @@ fn main() {
                 .help("Always run the given tests on modified submodules."),
         )
         .arg(
-            Arg::with_name("commit-message")
-                .long("commit-message")
+            Arg::with_name("commit-title")
+                .long("commit-title")
+                .alias("commit-message")
                 .takes_value(true)
-                .help("Commit message to use"),
+                .help("Commit title to use"),
         )
         .arg(
             Arg::with_name("set-config")
@@ -794,6 +846,25 @@ fn main() {
                 .multiple(true)
                 .number_of_values(1)
                 .help("Set the given config.toml option"),
+        )
+        .arg(
+            Arg::with_name("create-pr")
+                .long("create-pr")
+                .help("Automatically create a PR with `gh`"),
+        )
+        .arg(
+            Arg::with_name("self-assign")
+                .long("self-assign")
+                .help("Self-assign the PR when created")
+                .requires("create-pr"),
+        )
+        .arg(
+            Arg::with_name("self-approve")
+                .long("self-approve")
+                .takes_value(true)
+                .help("Automatically approve with the given bors command")
+                .requires("create-pr")
+                .requires("self-assign"),
         )
         .get_matches();
 
