@@ -609,8 +609,11 @@ impl<'a> SubUp<'a> {
                 return Ok(());
             }
         }
-        // Is -f ever necessary?
-        self.cli.git("push").run("Failed to push changes.")?;
+        let mut cmd = self.cli.git("push");
+        if self.cli.matches.is_present("force") {
+            cmd = cmd.args(&["--force"]);
+        }
+        cmd.run("Failed to push changes.")?;
         Ok(())
     }
 
