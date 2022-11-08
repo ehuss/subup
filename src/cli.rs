@@ -13,14 +13,17 @@ pub struct Cli<'a> {
     pub matches: ArgMatches<'a>,
     out_writer: BufferWriter,
     theme: ColorfulTheme,
+    is_interactive: bool,
 }
 
 impl<'a> Cli<'a> {
     pub fn new(matches: ArgMatches<'a>) -> Cli {
+        let is_interactive = !matches.is_present("force") && atty::is(atty::Stream::Stdout);
         Cli {
             matches,
             out_writer: BufferWriter::stdout(ColorChoice::Auto),
             theme: ColorfulTheme::default(),
+            is_interactive,
         }
     }
 
@@ -73,10 +76,13 @@ impl<'a> Cli<'a> {
     }
 
     pub fn is_interactive(&self) -> bool {
-        atty::is(atty::Stream::Stdout)
+        self.is_interactive
     }
 
     pub fn confirm(&self, message: &str, default: bool) -> Result<bool, Error> {
+        if self.matches.is_present("force") {
+            return Ok(default);
+        }
         if !self.is_interactive() {
             return Ok(false);
         }
@@ -87,6 +93,9 @@ impl<'a> Cli<'a> {
     }
 
     pub fn input(&self, message: &str, default: Option<&str>) -> Result<Option<String>, Error> {
+        if self.matches.is_present("force") {
+            return Ok(default.map(|s| s.to_string()));
+        }
         if !self.is_interactive() {
             return Ok(None);
         }
@@ -104,6 +113,9 @@ impl<'a> Cli<'a> {
         items: &[&str],
         default: Option<usize>,
     ) -> Result<Option<usize>, Error> {
+        if self.matches.is_present("force") {
+            return Ok(default);
+        }
         if !self.is_interactive() {
             return Ok(None);
         }

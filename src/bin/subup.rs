@@ -1,13 +1,13 @@
 #![warn(rust_2018_idioms)]
 
+use anyhow::{bail, format_err, Context, Error};
+use cargo_metadata::{Metadata, Package, PackageId};
+use clap::{App, Arg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use anyhow::{bail, format_err, Context, Error};
-use cargo_metadata::{Metadata, Package, PackageId};
-use clap::{App, Arg};
 use subup::cli::Cli;
 use subup::log;
 
@@ -105,17 +105,23 @@ impl<'a> SubUp<'a> {
                 .git("status --porcelain")
                 .run("Failed to get git status.")?;
             if !self.cli.matches.is_present("allow-changes") {
-                let choice = self.cli.select(
-                    "How do you wish to proceed?",
-                    &["Abort", "Reset changes", "Continue with changes"],
-                    Some(0),
-                )?;
-                match choice {
-                    None | Some(0) => self.cli.exit_err(),
-                    Some(1) => {
-                        self.cli.git("reset --hard").run("Failed to reset.")?;
+                let reset = || -> Result<(), Error> {
+                    self.cli.git("reset --hard").run("Failed to reset.")?;
+                    Ok(())
+                };
+                if self.cli.matches.is_present("always-reset") {
+                    reset()?;
+                } else {
+                    let choice = self.cli.select(
+                        "How do you wish to proceed?",
+                        &["Abort", "Reset changes", "Continue with changes"],
+                        Some(0),
+                    )?;
+                    match choice {
+                        None | Some(0) => self.cli.exit_err(),
+                        Some(1) => reset()?,
+                        Some(_) => {}
                     }
-                    Some(_) => {}
                 }
             }
         }
@@ -341,8 +347,7 @@ impl<'a> SubUp<'a> {
                 "Branch `{}` already exists.  It will be reset.",
                 self.up_branch
             ))?;
-            // TODO: cli option to allow.
-            if !self.cli.confirm("Do you want to continue?", true)? {
+            if self.cli.is_interactive() && !self.cli.confirm("Do you want to continue?", true)? {
                 self.cli.exit_err();
             }
         }
@@ -806,6 +811,16 @@ fn main() {
             Arg::with_name("allow-changes")
                 .long("allow-changes")
                 .help("Allow command to run with existing git changes"),
+        )
+        .arg(
+            Arg::with_name("always-reset")
+                .long("always-reset")
+                .help("Always reset the working tree, even if there are changes (DANGEROUS!)"),
+        )
+        .arg(
+            Arg::with_name("force")
+                .long("force")
+                .help("Don't ask for interactive confirmations"),
         )
         .arg(
             Arg::with_name("rust-branch")
