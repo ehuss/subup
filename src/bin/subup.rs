@@ -238,6 +238,23 @@ impl<'a> SubUp<'a> {
         self.cli.status("Fetching submodules.")?;
         // TODO: This may not be necessary after `submodule update`?
         for submodule in self.submodules_to_up() {
+            let output = self
+                .cli
+                .git("rev-parse --is-shallow-repository")
+                .dir(&submodule.path)
+                .capture_stdout(format!(
+                    "Failed to check if module `{}` was shallow.",
+                    submodule.path
+                ))?;
+
+            if output.trim() == "true" {
+                self.cli.status("Found shallow submodule, unshallowing.")?;
+                self.cli
+                    .git("fetch --unshallow")
+                    .dir(&submodule.path)
+                    .run(format!("Failed to fetch in module `{}`.", submodule.path))?;
+            }
+
             self.cli
                 .git("fetch --tags")
                 .dir(&submodule.path)
