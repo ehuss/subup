@@ -68,7 +68,7 @@ fn main() {
             Arg::with_name("branch")
                 .long("branch")
                 .help("Parent branch")
-                .default_value("master"),
+                .default_value("main"),
         )
         .get_matches();
 
