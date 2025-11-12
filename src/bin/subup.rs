@@ -42,7 +42,7 @@ struct SubUp<'a> {
     cli: &'a Cli<'a>,
     /// All submodules in the repo.
     submodules: Vec<Submodule>,
-    /// The target branch of the rust repo (master/beta/stable)
+    /// The target branch of the rust repo (main/beta/stable)
     rust_branch: String,
     /// The branch name to create for the pull request.
     up_branch: String,
@@ -127,11 +127,11 @@ impl<'a> SubUp<'a> {
         }
 
         // Check rust_branch.
-        if self.rust_branch == "master" {
-            self.cli.info("Using branch `master`")?;
+        if self.rust_branch == "main" {
+            self.cli.info("Using branch `main`")?;
         } else {
             self.cli
-                .warning(&format!("Using non-master branch `{}`", self.rust_branch))?;
+                .warning(&format!("Using non-main branch `{}`", self.rust_branch))?;
         }
 
         // Check upstream.
@@ -202,7 +202,7 @@ impl<'a> SubUp<'a> {
         for arg in self.cli.matches.values_of("submodules").unwrap() {
             let parts: Vec<_> = arg.splitn(2, ':').collect();
             let (path, rev) = if parts.len() == 1 {
-                if self.rust_branch != "master" {
+                if self.rust_branch != "main" {
                     self.cli.warning(&format!(
                         "Did not specify a branch for module `{}`.",
                         parts[0]
@@ -654,7 +654,7 @@ impl<'a> SubUp<'a> {
         if self.cli.matches.is_present("self-assign") {
             args.push("--assignee=@me");
         }
-        if self.rust_branch != "master" {
+        if self.rust_branch != "main" {
             args.push("--base");
             args.push(&self.rust_branch);
         }
@@ -744,7 +744,7 @@ fn up_branch(cli: &Cli<'_>, rust_branch: &str) -> String {
         // Compute the branch name.
         let mut parts = Vec::new();
         parts.push(Cow::from("update"));
-        if rust_branch != "master" {
+        if rust_branch != "main" {
             parts.push(Cow::from(rust_branch));
         }
         parts.extend(
@@ -757,7 +757,7 @@ fn up_branch(cli: &Cli<'_>, rust_branch: &str) -> String {
     }
 }
 
-/// Determine the base branch name to use (master/beta/stable).
+/// Determine the base branch name to use (main/beta/stable).
 fn rust_branch(cli: &Cli<'_>) -> Result<String, Error> {
     if let Some(branch) = cli.matches.value_of("rust-branch") {
         Ok(branch.to_string())
@@ -765,12 +765,12 @@ fn rust_branch(cli: &Cli<'_>) -> Result<String, Error> {
         let branch = cli
             .git("symbolic-ref --short HEAD")
             .capture_stdout("Could not determine current branch.")?;
-        if !["master", "beta", "stable"].iter().any(|b| *b == branch) {
+        if !["main", "beta", "stable"].iter().any(|b| *b == branch) {
             cli.warning(&format!(
-                "Current branch `{}` is not master/beta/stable.",
+                "Current branch `{}` is not main/beta/stable.",
                 branch
             ))?;
-            let branch = cli.input("Which base branch do you want to use?", Some("master"))?;
+            let branch = cli.input("Which base branch do you want to use?", Some("main"))?;
             if let Some(branch) = branch {
                 return Ok(branch);
             } else {
@@ -846,7 +846,7 @@ fn main() {
             Arg::with_name("rust-branch")
                 .long("rust-branch")
                 .takes_value(true)
-                .help("The target rust branch (master/beta/stable)"),
+                .help("The target rust branch (main/beta/stable)"),
         )
         .arg(
             Arg::with_name("up-branch")
